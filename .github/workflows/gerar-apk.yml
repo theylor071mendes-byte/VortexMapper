@@ -4,27 +4,55 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - name: Extrair projeto
+      - name: Baixar projeto
+        uses: actions/checkout@v4
+
+      - name: Extrair codigo do aplicativo
         run: unzip -q VortexMapper_Android_Projeto.zip
-      - uses: actions/setup-java@v4
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
-      - name: Instalar SDK
-        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
-      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Aceitar licencas e instalar Android SDK
+        shell: bash
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            echo "sdkmanager nao encontrado em $SDKMANAGER"
+            exit 1
+          fi
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses > /tmp/android-licenses.log 2>&1
+          status=$?
+          set -o pipefail
+          if [ "$status" -ne 0 ]; then
+            cat /tmp/android-licenses.log
+            exit "$status"
+          fi
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Configurar Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+
       - name: Compilar APK
         working-directory: VortexMapper
-        run: gradle :app:assembleDebug --no-daemon
-      - uses: actions/upload-artifact@v4
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Disponibilizar APK
+        uses: actions/upload-artifact@v4
         with:
           name: VortexMapper-APK
           path: VortexMapper/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
